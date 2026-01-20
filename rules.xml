@@ -1,0 +1,217 @@
+<!--
+Variables used in <rule ...> attributes (except id) are placeholders for templating (e.g., envsubst/Jinja/Ansible),
+so you can centrally tune severities and correlation thresholds without editing every rule manually.
+
+Numeric values and meaning:
+
+Severity levels:
+- LEVEL_BASE                       — base rule
+- LEVEL_VPN_LOGOUT                 — VPN logout
+- LEVEL_VPN_LOGIN                  — VPN login (success)
+- LEVEL_VPN_RECONNECT              — VPN reconnect anomaly correlation
+- LEVEL_VPN_PPP_AUTH_FAIL          — VPN/PPP authentication failure
+- LEVEL_VPN_PPP_BRUTEFORCE         — correlation for repeated auth failures (possible brute-force)
+- LEVEL_IPSEC_ERROR                — IPsec error (single event)
+- LEVEL_IPSEC_REPEAT               — IPsec repeated message
+- LEVEL_FW_DROP_INPUT              — Firewall DROP INPUT
+- LEVEL_FW_DROP_FORWARD            — Firewall DROP FORWARD
+- LEVEL_FW_DOS                     — Firewall high-rate DROP activity (DoS/flood)
+- LEVEL_DHCP_LEASE                 — DHCP lease assigned
+- LEVEL_DHCP_CONFLICT              — DHCP conflict detected
+- LEVEL_DHCP_CONFLICT_FREQ         — frequent DHCP conflicts correlation
+- LEVEL_ADMIN_LOGIN                — admin login success
+- LEVEL_ADMIN_LOGOUT               — admin logout
+- LEVEL_ADMIN_FAIL                 — admin login failed
+- LEVEL_ADMIN_BRUTEFORCE           — correlation for repeated admin login failures (possible brute-force)
+- LEVEL_REBOOT                     — reboot event
+- LEVEL_LINK_DOWN                  — link down
+- LEVEL_LINK_UP                    — link up
+- LEVEL_LINK_FLAP                  — link flapping correlation
+
+Correlation thresholds:
+- FREQ_VPN_RECONNECT               — event count threshold
+- TF_VPN_RECONNECT                 — time window (seconds)
+- IGN_VPN_RECONNECT                — repeat suppression (seconds)
+
+- FREQ_PPP_BRUTEFORCE  
+- TF_PPP_BRUTEFORCE 
+- IGN_PPP_BRUTEFORCE  
+
+- FREQ_FW_DOS  
+- TF_FW_DOS  
+- IGN_FW_DOS  
+
+- FREQ_DHCP_CONFLICT  
+- TF_DHCP_CONFLICT  
+- IGN_DHCP_CONFLICT  
+
+- FREQ_ADMIN_BRUTEFORCE  
+- TF_ADMIN_BRUTEFORCE  
+- IGN_ADMIN_BRUTEFORCE  
+
+- FREQ_LINK_FLAP  
+- TF_LINK_FLAP  
+- IGN_LINK_FLAP  
+-->
+
+
+<group name="MikroTik.rules">
+
+<rule id="100001" level="LEVEL_BASE">
+    <decoded_as>mikrotik</decoded_as>
+    <description>MikroTik RouterOS: base rule</description>
+    <group>mikrotik,</group>
+  </rule>
+  
+  <rule id="100002" level="LEVEL_VPN_LOGOUT">
+    <if_sid>100001</if_sid>
+    <match>logged out</match>
+    <description>VPN $(connection_type): user $(dstuser) logged out</description>
+    <group>mikrotik,vpn,logout</group>
+  </rule>
+
+  <rule id="100003" level="LEVEL_VPN_LOGIN">
+    <if_sid>100001</if_sid>
+    <match>logged in</match>
+    <description>VPN $(connection_type): user $(dstuser) logged in</description>
+    <group>mikrotik,vpn,login,authentication_success</group>
+  </rule>
+
+  <rule id="100004" level="LEVEL_VPN_RECONNECT" frequency="FREQ_VPN_RECONNECT" timeframe="TF_VPN_RECONNECT" ignore="IGN_VPN_RECONNECT">
+    <if_matched_sid>100003</if_matched_sid>
+    <same_user />
+    <description>VPN: user $(dstuser) logged in 3+ times in 60s (reconnect anomaly)</description>
+    <group>mikrotik,vpn,correlation,</group>
+  </rule>
+
+  <rule id="100005" level="LEVEL_VPN_PPP_AUTH_FAIL">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">ppp,.*authentication failed</match>
+    <description>VPN/PPP: authentication failure</description>
+    <group>mikrotik,vpn,auth_fail,</group>
+  </rule>
+
+  <rule id="100006" level="LEVEL_VPN_PPP_BRUTEFORCE" frequency="FREQ_PPP_BRUTEFORCE" timeframe="TF_PPP_BRUTEFORCE" ignore="IGN_PPP_BRUTEFORCE">
+    <if_matched_sid>100005</if_matched_sid>
+    <description>VPN/PPP: 5+ authentication failures in 5m (possible brute-force)</description>
+    <group>mikrotik,vpn,bruteforce,correlation,</group>
+  </rule>
+
+  <rule id="100007" level="LEVEL_IPSEC_ERROR">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">ipsec,error</match>
+    <description>IPsec: error</description>
+    <group>mikrotik,ipsec,errors,</group>
+  </rule>
+
+  <rule id="100008" level="LEVEL_IPSEC_REPEAT">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-ipsec-error</decoded_as>
+    <description>IPsec: repeated message from $(srcip): $(error_msg)</description>
+    <group>mikrotik,ipsec,errors,</group>
+  </rule>
+
+  <rule id="100009" level="LEVEL_FW_DROP_INPUT">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-firewall</decoded_as>
+    <match>DROP INPUT</match>
+    <description>Firewall: DROP INPUT (src=$(srcip), dport=$(dstport))</description>
+    <group>mikrotik,firewall,drop,fw_event</group>
+  </rule>
+
+  <rule id="100010" level="LEVEL_FW_DROP_FORWARD">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-firewall</decoded_as>
+    <match type="pcre2">DROP FORWARD</match>
+    <description>Firewall: DROP FORWARD (src=$(srcip), dst=$(dstip), proto=$(protocol))</description>
+    <group>mikrotik,firewall,drop,fw_event</group>
+  </rule>
+
+  <rule id="100011" level="LEVEL_FW_DOS" frequency="FREQ_FW_DOS" timeframe="TF_FW_DOS" ignore="IGN_FW_DOS">
+    <if_matched_group>fw_event</if_matched_group>
+    <same_srcip />
+    <description>Firewall: 100+ DROP in 60s from $(srcip) (DoS/flood)</description>
+    <group>mikrotik,firewall,dos,correlation,</group>
+  </rule>
+
+  <rule id="100012" level="LEVEL_DHCP_LEASE">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">dhcp,.* assigned </match>
+    <description>DHCP: address assigned</description>
+    <group>mikrotik,dhcp,lease,</group>
+  </rule>
+
+  <rule id="100013" level="LEVEL_DHCP_CONFLICT">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">dhcp,.*Detected conflict</match>
+    <description>DHCP: IP conflict detected</description>
+    <group>mikrotik,dhcp,conflict,dhcp_event</group>
+  </rule>
+
+  <rule id="100014" level="LEVEL_DHCP_CONFLICT_FREQ" frequency="FREQ_DHCP_CONFLICT" timeframe="TF_DHCP_CONFLICT" ignore="IGN_DHCP_CONFLICT">
+    <if_matched_group>dhcp_event</if_matched_group>
+    <description>DHCP: frequent IP conflicts (3+ in 5m)</description>
+    <group>mikrotik,dhcp,conflict,correlation,</group>
+  </rule>
+
+  <rule id="100015" level="LEVEL_ADMIN_LOGIN">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-admin-account</decoded_as>
+    <match>logged in</match>
+    <description>Admin: $(dstuser) logged in via $(protocol) from $(srcip)</description>
+    <group>mikrotik,admin,auth,authentication_success,</group>
+  </rule>
+
+  <rule id="100016" level="LEVEL_ADMIN_LOGOUT">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-admin-account</decoded_as>
+    <match>logged out</match>
+    <description>Admin: $(dstuser) logged out ($(protocol))</description>
+    <group>mikrotik,admin,logout,</group>
+  </rule>
+
+  <rule id="100017" level="LEVEL_ADMIN_FAIL">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">system,info,account.*login failed</match>
+    <description>Admin: login failed</description>
+    <group>mikrotik,admin,auth_fail,</group>
+  </rule>
+
+  <rule id="100018" level="LEVEL_ADMIN_BRUTEFORCE" frequency="FREQ_ADMIN_BRUTEFORCE" timeframe="TF_ADMIN_BRUTEFORCE" ignore="IGN_ADMIN_BRUTEFORCE">
+    <if_matched_sid>100017</if_matched_sid>
+    <description>Admin: 5+ login failures in 5m (brute-force)</description>
+    <group>mikrotik,admin,bruteforce,correlation,</group>
+  </rule>
+
+  <rule id="100019" level="LEVEL_REBOOT">
+    <if_sid>100001</if_sid>
+    <match type="pcre2">system,.*router rebooted</match>
+    <description>System: device rebooted</description>
+    <group>mikrotik,system,reboot,reboot_event</group>
+  </rule>
+
+  <rule id="100020" level="LEVEL_LINK_DOWN">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-interface</decoded_as>
+    <match>link down</match>
+    <description>Interface: $(interface) link DOWN</description>
+    <group>mikrotik,system,link,link_event</group>
+  </rule>
+
+  <rule id="100021" level="LEVEL_LINK_UP">
+    <if_sid>100001</if_sid>
+    <decoded_as>mikrotik-interface</decoded_as>
+    <match>link up</match>
+    <description>Interface: $(interface) link UP</description>
+    <group>mikrotik,system,link,link_event</group>
+  </rule>
+
+  <rule id="100022" level="LEVEL_LINK_FLAP" frequency="FREQ_LINK_FLAP" timeframe="TF_LINK_FLAP" ignore="IGN_LINK_FLAP">
+    <if_matched_group>link_event</if_matched_group>
+    <description>Interface: frequent flapping (6+ in 10m)</description>
+    <group>mikrotik,system,link,correlation,</group>
+  </rule>
+
+</group>
+
+

@@ -1,0 +1,51 @@
+<decoder name="mikrotik">
+  <prematch type="pcre2">\w+,\w+,\w+</prematch>
+</decoder>
+
+<decoder name="mikrotik-vpn-login">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">logged in</prematch>
+  <regex type="pcre2">(\w+),ppp,info,account\s+(\S+)\s+(logged\sin),\s+(\d+\.\d+\.\d+\.\d+)</regex>
+  <order>connection_type, dstuser, action, srcip</order>
+</decoder>
+
+<decoder name="mikrotik-vpn-logout">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">ppp,info,account.*logged out</prematch>
+  <regex type="pcre2">(\w+),ppp,info,account\s+\S+\s+(\S+)\s+(logged\sout)</regex>
+  <order>connection_type, user, action</order>
+</decoder>
+
+<decoder name="mikrotik-admin-account">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">^system,info,account</prematch>
+  <regex type="pcre2">user\s+(\S+)\s+(logged\s\w+)\s+from\s+(\d+.\d+.\d+.\d+)\s+via\s+(\S+)</regex>
+  <order>user, action, srcip, protocol</order>
+</decoder>
+
+<decoder name="mikrotik-firewall">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">^firewall,info</prematch>
+  <regex type="pcre2">SRC=(\d+.\d+.\d+.\d+)\s+DST=(\d+.\d+.\d+.\d+)\s+PROTO=(\w+)</regex>
+  <order>srcip, dstip, protocol</order>
+</decoder>
+
+<decoder name="mikrotik-firewall-fields">
+  <parent>mikrotik</parent>
+  <regex type="pcre2">DPT=(\d+)</regex>
+  <order>dstport</order>
+</decoder>
+
+<decoder name="mikrotik-interface">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">^interface,info</prematch>
+  <regex type="pcre2">(\S+)\slink\s(up|down)</regex>
+  <order>interface, status</order>
+</decoder>
+
+<decoder name="mikrotik-ipsec-error">
+  <parent>mikrotik</parent>
+  <prematch type="pcre2">^ipsec,error</prematch>
+  <regex type="pcre2">message\srepeated\s\d+\stimes:\s\[\s*(\d+.\d+.\d+.\d+)\s+(.*)\]</regex>
+  <order>srcip, error_msg</order>
+</decoder>
